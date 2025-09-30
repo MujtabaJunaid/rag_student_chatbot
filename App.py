@@ -7,11 +7,7 @@ from typing import List, Dict, Any, Optional
 import json
 from datetime import datetime
 from groq import Groq
-
-from langchain.schema import Document
-from langchain_community.vectorstores import Chroma
-from langchain_cohere import CohereEmbeddings
-from langgraph.graph import Graph, END
+import chromadb
 from chromadb.config import Settings as ChromaSettings
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -45,48 +41,10 @@ class ChatQuery(BaseModel):
 class VectorStoreManager:
     def __init__(self, persist_directory: str = "./chroma_db"):
         self.persist_directory = persist_directory
-        cohere_key = os.environ.get("COHERE_API_KEY")
-        self.embeddings = None
-        if cohere_key:
-            try:
-                self.embeddings = CohereEmbeddings(cohere_api_key=cohere_key)
-            except Exception:
-                self.embeddings = None
-        self.vector_store = None
-        try:
-            settings = ChromaSettings(
-                persist_directory=persist_directory,
-                chroma_db_impl="duckdb+parquet",
-                anonymized_telemetry=False
-            )
-            self.vector_store = Chroma(
-                persist_directory=persist_directory,
-                embedding_function=self.embeddings,
-                client_settings=settings
-            )
-        except Exception:
-            try:
-                self.vector_store = Chroma(
-                    persist_directory=persist_directory,
-                    embedding_function=self.embeddings
-                )
-            except Exception:
-                self.vector_store = None
-
-    def _ensure_vector_store(self):
-        if self.vector_store is None:
-            if self.embeddings is None:
-                raise RuntimeError("Embeddings not configured; set COHERE_API_KEY environment variable.")
-            try:
-                self.vector_store = Chroma(
-                    persist_directory=self.persist_directory,
-                    embedding_function=self.embeddings
-                )
-            except Exception as e:
-                raise RuntimeError(f"Failed to initialize Chroma vector store: {e}")
+        self.client = chromadb.PersistentClient(path=persist_directory)
+        self.collection = self.client.get_or_create_collection(name="student_performance")
 
     def add_question_data(self, question_data: QuestionData):
-        self._ensure_vector_store()
         doc_text = f"""
         Student: {question_data.student_id}
         Assessment: {question_data.assessment_id}
@@ -97,22 +55,30 @@ class VectorStoreManager:
         Tags: {','.join(question_data.tags)}
         Date: {question_data.date}
         """
-        metadata = {
-            "student_id": question_data.student_id,
-            "assessment_id": question_data.assessment_id,
-            "question_type": question_data.question_type,
-            "total_marks": question_data.total_marks,
-            "obtained_marks": question_data.obtained_marks,
-            "tags": ','.join(question_data.tags),
-            "date": question_data.date,
-            "feedback": question_data.feedback
-        }
-        doc = Document(page_content=doc_text, metadata=metadata)
-        self.vector_store.add_documents([doc])
+        doc_id = f"{question_data.student_id}_{question_data.assessment_id}_{datetime.now().timestamp()}"
+        
+        self.collection.add(
+            documents=[doc_text],
+            metadatas=[{
+                "student_id": question_data.student_id,
+                "assessment_id": question_data.assessment_id,
+                "question_type": question_data.question_type,
+                "total_marks": question_data.total_marks,
+                "obtained_marks": question_data.obtained_marks,
+                "tags": ','.join(question_data.tags),
+                "date": question_data.date,
+                "feedback": question_data.feedback
+            }],
+            ids=[doc_id]
+        )
 
-    def get_retriever(self):
-        self._ensure_vector_store()
-        return self.vector_store.as_retriever(search_kwargs={"k": 1})
+    def search_documents(self, student_id: str, query: str, n_results: int = 3):
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            where={"student_id": student_id}
+        )
+        return results
 
 vector_manager = VectorStoreManager()
 
@@ -121,57 +87,54 @@ class StudentChatbot:
         self.client = client
         self.vector_manager = vector_manager
 
+    def call_groq_api(self, prompt: str) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3-70b-8192",
+                temperature=0.7,
+                timeout=30
+            )
+            if response.choices and response.choices[0].message.content:
+                return response.choices[0].message.content
+            else:
+                return "No response generated from AI."
+        except Exception as e:
+            return f"API Error: {str(e)}"
+
     def process_query(self, student_id: str, query: str) -> Dict[str, Any]:
         try:
             print(f"Processing query for student {student_id}: {query}")
             
-            retriever = self.vector_manager.get_retriever()
-            filters = {"student_id": student_id}
-            documents = retriever.invoke(query, filter=filters)
+            search_results = self.vector_manager.search_documents(student_id, query, n_results=3)
+            documents = search_results['documents'][0] if search_results['documents'] else []
+            metadatas = search_results['metadatas'][0] if search_results['metadatas'] else []
+            
             print(f"Retrieved {len(documents)} documents")
             
             if not documents:
+                analysis_prompt = f"Student {student_id} asked: {query}. They have no performance data yet. Provide general study advice."
+                advice_prompt = f"Student asked: {query}. They haven't added any performance data. Provide helpful general advice for students."
+                
+                analysis = self.call_groq_api(analysis_prompt)
+                advice = self.call_groq_api(advice_prompt)
+                
                 return {
-                    "response": "No performance data found for your student ID. Please add your assessment data first.",
-                    "analysis": "No documents found for this student ID.",
+                    "response": advice,
+                    "analysis": analysis,
                     "documents_used": 0
                 }
             
-            doc_content = documents[0].page_content
+            doc_content = "\n\n".join(documents)
+            print(f"Document content: {doc_content}")
             
-            analysis_prompt = f"""
-            Analyze this student's performance data:
+            analysis_prompt = f"Analyze this student performance data: {doc_content}"
+            analysis = self.call_groq_api(analysis_prompt)
+            print(f"Analysis result: {analysis}")
             
-            {doc_content}
-            
-            Provide a brief analysis focusing on performance patterns.
-            """
-            
-            analysis_completion = self.client.chat.completions.create(
-                messages=[{"role": "user", "content": analysis_prompt}],
-                model="llama3-70b-8192",
-                temperature=0.7
-            )
-            analysis = analysis_completion.choices[0].message.content
-            
-            advice_prompt = f"""
-            Student Query: {query}
-            
-            Performance Data:
-            {doc_content}
-            
-            Performance Analysis:
-            {analysis}
-            
-            Provide specific, personalized advice addressing the student's query.
-            """
-            
-            advice_completion = self.client.chat.completions.create(
-                messages=[{"role": "user", "content": advice_prompt}],
-                model="llama3-70b-8192",
-                temperature=0.7
-            )
-            advice = advice_completion.choices[0].message.content
+            advice_prompt = f"Student asked: {query}. Performance data: {doc_content}. Analysis: {analysis}. Provide specific advice."
+            advice = self.call_groq_api(advice_prompt)
+            print(f"Advice result: {advice}")
             
             return {
                 "response": advice,
@@ -182,7 +145,7 @@ class StudentChatbot:
         except Exception as e:
             print(f"Error in process_query: {str(e)}")
             return {
-                "response": "I apologize, but I'm having trouble processing your request. Please try again.",
+                "response": f"System error: {str(e)}",
                 "analysis": f"Error: {str(e)}",
                 "documents_used": 0
             }
@@ -208,8 +171,8 @@ async def chat_with_bot(chat_query: ChatQuery):
         }
     except Exception as e:
         return {
-            "response": "I apologize for the inconvenience. Please try your question again.",
-            "analysis": "Service temporarily unavailable.",
+            "response": f"Request failed: {str(e)}",
+            "analysis": f"Error: {str(e)}",
             "documents_used": 0
         }
 
