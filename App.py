@@ -13,6 +13,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_cohere import CohereEmbeddings
 from langgraph.graph import Graph, END
 from chromadb.config import Settings as ChromaSettings
+from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
