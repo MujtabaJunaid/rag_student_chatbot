@@ -14,7 +14,7 @@ from chromadb.config import Settings as ChromaSettings
 
 app = FastAPI()
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+client = Groq(api_key=os.environ.get("groq_api_key"))
 
 class QuestionData(BaseModel):
     student_id: str
@@ -34,7 +34,7 @@ class ChatQuery(BaseModel):
 class VectorStoreManager:
     def __init__(self, persist_directory: str = "./chroma_db"):
         self.persist_directory = persist_directory
-        cohere_key = os.environ.get("COHERE_API_KEY")
+        cohere_key = os.environ.get("default")
         self.embeddings = None
         if cohere_key:
             try:
