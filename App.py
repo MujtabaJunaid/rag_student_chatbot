@@ -112,7 +112,7 @@ class VectorStoreManager:
 
     def get_retriever(self):
         self._ensure_vector_store()
-        return self.vector_store.as_retriever()
+        return self.vector_store.as_retriever(search_kwargs={"k": 3})
 
 vector_manager = VectorStoreManager()
 
@@ -138,7 +138,8 @@ class IntentAnalyzer:
             chat_completion = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192",
-                temperature=0.1
+                temperature=0.1,
+                timeout=30
             )
             response_text = chat_completion.choices[0].message.content.strip()
             return json.loads(response_text)
@@ -167,7 +168,8 @@ class PerformanceAnalyzer:
             chat_completion = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192",
-                temperature=0.1
+                temperature=0.1,
+                timeout=30
             )
             return {"analysis": chat_completion.choices[0].message.content, "documents": documents}
         except Exception as e:
@@ -192,7 +194,8 @@ class Advisor:
             chat_completion = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192",
-                temperature=0.1
+                temperature=0.1,
+                timeout=30
             )
             return chat_completion.choices[0].message.content
         except Exception as e:
@@ -214,7 +217,7 @@ class StudentChatbot:
             
             retriever = self.vector_manager.get_retriever()
             filters = {"student_id": student_id}
-            documents = retriever.get_relevant_documents(query, filter=filters)
+            documents = retriever.invoke(query, filter=filters)
             print(f"Retrieved {len(documents)} documents")
             
             performance_analysis = self.performance_analyzer.analyze_performance(documents)
