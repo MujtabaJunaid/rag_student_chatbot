@@ -91,7 +91,7 @@ class StudentChatbot:
         try:
             response = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama3-70b-8192",
+                model="Llama 3.3 70B",
                 temperature=0.7,
                 timeout=30
             )
