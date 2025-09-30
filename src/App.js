@@ -8,8 +8,9 @@ function App() {
   const [analysis, setAnalysis] = useState('');
   const [documentsUsed, setDocumentsUsed] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [addDataLoading, setAddDataLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
-  const backendUrl = 'https://rag-student-chatbot-c64a020171ba.herokuapp.com';
+  const backendUrl = process.env.REACT_APP_BACKEND_URL || 'https://rag-student-chatbot-c64a020171ba.herokuapp.com';
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -26,18 +27,25 @@ function App() {
           query: query
         })
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Server error');
+      }
+      
       const data = await response.json();
       setResponse(data.response);
       setAnalysis(data.analysis);
       setDocumentsUsed(data.documents_used);
     } catch (error) {
-      setResponse('Error connecting to server');
+      setResponse(error.message || 'Error connecting to server');
     }
     setLoading(false);
   };
 
   const handleAddDataSubmit = async (e) => {
     e.preventDefault();
+    setAddDataLoading(true);
     const formData = new FormData(e.target);
     const questionData = {
       student_id: formData.get('student_id'),
@@ -58,11 +66,19 @@ function App() {
         },
         body: JSON.stringify(questionData)
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Server error');
+      }
+      
       const result = await response.json();
       alert(result.message);
+      e.target.reset();
     } catch (error) {
-      alert('Error adding question data');
+      alert(error.message || 'Error adding question data');
     }
+    setAddDataLoading(false);
   };
 
   return (
@@ -181,7 +197,9 @@ function App() {
                 <label>Tags (comma separated):</label>
                 <input type="text" name="tags" placeholder="biology, diagram, theory" required />
               </div>
-              <button type="submit">Add Question Data</button>
+              <button type="submit" disabled={addDataLoading}>
+                {addDataLoading ? 'Adding Data...' : 'Add Question Data'}
+              </button>
             </form>
           </div>
         )}
