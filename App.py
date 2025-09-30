@@ -7,9 +7,8 @@ from datetime import datetime
 from groq import Groq
 
 from langchain.schema import Document
-from langchain.vectorstores import Chroma
-from langchain.embeddings import CohereEmbeddings
-from langchain.schema import BaseRetriever
+from langchain_community.vectorstores import Chroma
+from langchain_cohere import CohereEmbeddings
 from langgraph.graph import Graph, END
 
 app = FastAPI()
