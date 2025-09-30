@@ -10,6 +10,7 @@ from langchain.schema import Document
 from langchain_community.vectorstores import Chroma
 from langchain_cohere import CohereEmbeddings
 from langgraph.graph import Graph, END
+from chromadb.config import Settings as ChromaSettings
 
 app = FastAPI()
 
@@ -36,10 +37,13 @@ class VectorStoreManager:
         self.vector_store = Chroma(
             persist_directory=persist_directory,
             embedding_function=self.embeddings,
-            collection_name="student_performance",
-            client_settings={"anonymized_telemetry": False}
+            client_settings=ChromaSettings(
+                persist_directory=persist_directory,
+                chroma_db_impl="duckdb+parquet",
+                anonymized_telemetry=False
+            )
         )
-
+    
     def add_question_data(self, question_data: QuestionData):
         doc_text = f"""
         Student: {question_data.student_id}
@@ -64,7 +68,7 @@ class VectorStoreManager:
         doc = Document(page_content=doc_text, metadata=metadata)
         self.vector_store.add_documents([doc])
         self.vector_store.persist()
-
+    
     def get_retriever(self):
         return self.vector_store.as_retriever()
 
@@ -73,7 +77,7 @@ vector_manager = VectorStoreManager()
 class IntentAnalyzer:
     def __init__(self):
         self.client = client
-
+    
     def analyze_intent(self, query: str) -> Dict[str, Any]:
         chat_completion = self.client.chat.completions.create(
             messages=[{"role": "user", "content": f"Analyze the student's query and determine the intent and relevant filters. Query: {query}"}],
@@ -87,7 +91,7 @@ class IntentAnalyzer:
 class PerformanceAnalyzer:
     def __init__(self):
         self.client = client
-
+    
     def analyze_performance(self, documents: List[Document]) -> Dict[str, Any]:
         doc_texts = [doc.page_content for doc in documents]
         context = "\n\n".join(doc_texts)
@@ -100,7 +104,7 @@ class PerformanceAnalyzer:
 class Advisor:
     def __init__(self):
         self.client = client
-
+    
     def generate_advice(self, analysis: Dict[str, Any], intent: str) -> str:
         chat_completion = self.client.chat.completions.create(
             messages=[{
@@ -118,7 +122,7 @@ class StudentChatbot:
         self.advisor = Advisor()
         self.vector_manager = vector_manager
         self.graph = self._build_graph()
-
+    
     def _build_graph(self):
         workflow = Graph()
         workflow.add_node("intent_analyzer", self._intent_analyzer_node)
@@ -133,11 +137,11 @@ class StudentChatbot:
         workflow.add_edge("advisor", "response")
         workflow.add_edge("response", END)
         return workflow.compile()
-
+    
     def _intent_analyzer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         intent_data = self.intent_analyzer.analyze_intent(state["query"])
         return {"intent": intent_data}
-
+    
     def _retriever_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         retriever = self.vector_manager.get_retriever()
         filters = {"student_id": state["student_id"]}
@@ -148,25 +152,25 @@ class StudentChatbot:
             filter=filters
         )
         return {"documents": documents}
-
+    
     def _performance_analyzer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         analysis = self.performance_analyzer.analyze_performance(state["documents"])
         return {"performance_analysis": analysis}
-
+    
     def _advisor_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         advice = self.advisor.generate_advice(
             state["performance_analysis"],
             state["intent"].get("intent", "performance_review")
         )
         return {"advice": advice}
-
+    
     def _response_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "response": state["advice"],
             "analysis": state["performance_analysis"]["analysis"],
             "documents_used": len(state["documents"])
         }
-
+    
     def query(self, student_id: str, query: str) -> Dict[str, Any]:
         initial_state = {
             "student_id": student_id,
