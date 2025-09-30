@@ -10,7 +10,7 @@ from langchain.schema import Document
 from langchain.vectorstores import Chroma
 from langchain.embeddings import CohereEmbeddings
 from langchain.schema import BaseRetriever
-from langgraph.graph import Graph
+from langgraph.graph import Graph, END
 
 app = FastAPI()
 
@@ -130,6 +130,7 @@ class StudentChatbot:
         workflow.add_edge("retriever", "performance_analyzer")
         workflow.add_edge("performance_analyzer", "advisor")
         workflow.add_edge("advisor", "response")
+        workflow.add_edge("response", END)
         return workflow.compile()
     
     def _intent_analyzer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
