@@ -45,7 +45,7 @@ class ChatQuery(BaseModel):
 class VectorStoreManager:
     def __init__(self, persist_directory: str = "./chroma_db"):
         self.persist_directory = persist_directory
-        cohere_key = os.environ.get("COHERE_API_KEY")
+        cohere_key = os.environ.get("default")
         self.embeddings = None
         if cohere_key:
             try:
