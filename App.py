@@ -13,6 +13,9 @@ from langchain_community.vectorstores import Chroma
 from langchain_cohere import CohereEmbeddings
 from langgraph.graph import Graph, END
 from chromadb.config import Settings as ChromaSettings
+
+
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,8 +23,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app = FastAPI()
 
 client = Groq(api_key=os.environ.get("groq_api_key"))
 
