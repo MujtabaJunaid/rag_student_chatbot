@@ -1,8 +1,8 @@
-fastapi==0.95.2
+fastapi==0.111.0
 uvicorn==0.22.0
 gunicorn==20.1.0
-pydantic==1.10.2
-langchain>=0.0.205
+pydantic>=2.7.4
+langchain==0.3.27
 langchain-community==0.3.30
 chromadb==0.4.1
 cohere==4.0.0
