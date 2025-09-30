@@ -166,7 +166,7 @@ class PerformanceAnalyzer:
             """
             chat_completion = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama-3.1-70b-versatile",
+                model="Llama 3.3 70B",
                 temperature=0.1
             )
             return {"analysis": chat_completion.choices[0].message.content, "documents": documents}
