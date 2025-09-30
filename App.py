@@ -137,7 +137,7 @@ class IntentAnalyzer:
             """
             chat_completion = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="Llama 3.3 70B",
+                model="llama-3.3-70b-versatile",
                 temperature=0.1
             )
             response_text = chat_completion.choices[0].message.content.strip()
@@ -166,7 +166,7 @@ class PerformanceAnalyzer:
             """
             chat_completion = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="Llama 3.3 70B",
+                model="llama-3.3-70b-versatile",
                 temperature=0.1
             )
             return {"analysis": chat_completion.choices[0].message.content, "documents": documents}
@@ -191,7 +191,7 @@ class Advisor:
             """
             chat_completion = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="Llama 3.3 70B",
+                model="llama-3.3-70b-versatile",
                 temperature=0.1
             )
             return chat_completion.choices[0].message.content
