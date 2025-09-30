@@ -45,7 +45,7 @@ class ChatQuery(BaseModel):
 class VectorStoreManager:
     def __init__(self, persist_directory: str = "./chroma_db"):
         self.persist_directory = persist_directory
-        cohere_key = os.environ.get("COHERE_API_KEY")
+        cohere_key = os.environ.get("default")
         self.embeddings = None
         if cohere_key:
             try:
@@ -103,7 +103,7 @@ class VectorStoreManager:
             "question_type": question_data.question_type,
             "total_marks": question_data.total_marks,
             "obtained_marks": question_data.obtained_marks,
-            "tags": question_data.tags,
+            "tags": ','.join(question_data.tags),
             "date": question_data.date,
             "feedback": question_data.feedback
         }
