@@ -3,7 +3,7 @@ os.environ["CHROMA_TELEMETRY_ENABLED"] = "false"
 os.environ["ANONYMIZED_TELEMETRY"] = "false"
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
 from datetime import datetime
 from groq import Groq
@@ -109,10 +109,6 @@ class VectorStoreManager:
         }
         doc = Document(page_content=doc_text, metadata=metadata)
         self.vector_store.add_documents([doc])
-        try:
-            self.vector_store.persist()
-        except Exception:
-            pass
 
     def get_retriever(self):
         self._ensure_vector_store()
@@ -126,12 +122,24 @@ class IntentAnalyzer:
 
     def analyze_intent(self, query: str) -> Dict[str, Any]:
         try:
+            prompt = f"""
+            Analyze this student query and return a JSON with intent and filters:
+            Query: "{query}"
+            
+            Return JSON format:
+            {{
+                "intent": "performance_review|improvement_tips|subject_analysis|general_advice",
+                "subject_filter": "subject_name_or_null",
+                "topic_filter": "topic_name_or_null"
+            }}
+            """
             chat_completion = self.client.chat.completions.create(
-                messages=[{"role": "user", "content": f"Analyze the student's query and determine the intent and relevant filters. Query: {query}"}],
+                messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192"
             )
-            return json.loads(chat_completion.choices[0].message.content)
-        except Exception:
+            response_text = chat_completion.choices[0].message.content
+            return json.loads(response_text)
+        except Exception as e:
             return {"intent": "performance_review", "subject_filter": None, "topic_filter": None}
 
 class PerformanceAnalyzer:
@@ -139,27 +147,41 @@ class PerformanceAnalyzer:
         self.client = client
 
     def analyze_performance(self, documents: List[Document]) -> Dict[str, Any]:
+        if not documents:
+            return {"analysis": "No performance data found for this student.", "documents": documents}
+        
         doc_texts = [doc.page_content for doc in documents]
         context = "\n\n".join(doc_texts)
-        chat_completion = self.client.chat.completions.create(
-            messages=[{"role": "user", "content": f"Analyze the student's performance data and identify strengths and weaknesses. Performance Data: {context}"}],
-            model="llama3-70b-8192"
-        )
-        return {"analysis": chat_completion.choices[0].message.content, "documents": documents}
+        
+        try:
+            chat_completion = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": f"Analyze this student's performance data and provide key insights: {context}"}],
+                model="llama3-70b-8192"
+            )
+            return {"analysis": chat_completion.choices[0].message.content, "documents": documents}
+        except Exception as e:
+            return {"analysis": "Analysis unavailable at the moment.", "documents": documents}
 
 class Advisor:
     def __init__(self):
         self.client = client
 
-    def generate_advice(self, analysis: Dict[str, Any], intent: str) -> str:
-        chat_completion = self.client.chat.completions.create(
-            messages=[{
-                "role": "user",
-                "content": f"Based on the performance analysis and student intent, generate actionable advice. Intent: {intent} Performance Analysis: {analysis['analysis']}"
-            }],
-            model="llama3-70b-8192"
-        )
-        return chat_completion.choices[0].message.content
+    def generate_advice(self, analysis: Dict[str, Any], intent: str, query: str) -> str:
+        try:
+            prompt = f"""
+            Student Query: {query}
+            Query Intent: {intent}
+            Performance Analysis: {analysis['analysis']}
+            
+            Provide specific, actionable advice based on the above information.
+            """
+            chat_completion = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3-70b-8192"
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            return "I apologize, but I'm unable to generate advice at the moment. Please try again later."
 
 class StudentChatbot:
     def __init__(self):
@@ -189,15 +211,17 @@ class StudentChatbot:
         return {"intent": intent_data}
 
     def _retriever_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        retriever = self.vector_manager.get_retriever()
-        filters = {"student_id": state["student_id"]}
-        if state["intent"].get("subject_filter"):
-            filters["tags"] = state["intent"]["subject_filter"]
-        documents = retriever.get_relevant_documents(
-            state["query"],
-            filter=filters
-        )
-        return {"documents": documents}
+        try:
+            retriever = self.vector_manager.get_retriever()
+            filters = {"student_id": state["student_id"]}
+            
+            documents = retriever.get_relevant_documents(
+                state["query"],
+                filter=filters
+            )
+            return {"documents": documents}
+        except Exception as e:
+            return {"documents": []}
 
     def _performance_analyzer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         analysis = self.performance_analyzer.analyze_performance(state["documents"])
@@ -206,7 +230,8 @@ class StudentChatbot:
     def _advisor_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         advice = self.advisor.generate_advice(
             state["performance_analysis"],
-            state["intent"].get("intent", "performance_review")
+            state["intent"].get("intent", "performance_review"),
+            state["query"]
         )
         return {"advice": advice}
 
@@ -218,12 +243,19 @@ class StudentChatbot:
         }
 
     def query(self, student_id: str, query: str) -> Dict[str, Any]:
-        initial_state = {
-            "student_id": student_id,
-            "query": query
-        }
-        result = self.graph.invoke(initial_state)
-        return result
+        try:
+            initial_state = {
+                "student_id": student_id,
+                "query": query
+            }
+            result = self.graph.invoke(initial_state)
+            return result
+        except Exception as e:
+            return {
+                "response": "Sorry, I encountered an error processing your request.",
+                "analysis": "System error occurred.",
+                "documents_used": 0
+            }
 
 chatbot = StudentChatbot()
 
@@ -245,7 +277,15 @@ async def chat_with_bot(chat_query: ChatQuery):
             "documents_used": result["documents_used"]
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "response": "Sorry, I'm having trouble processing your request right now.",
+            "analysis": "Service temporarily unavailable.",
+            "documents_used": 0
+        }
+
+@app.get("/")
+async def root():
+    return {"message": "Student Chatbot API is running"}
 
 @app.get("/api/health")
 async def health_check():
