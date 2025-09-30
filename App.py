@@ -196,7 +196,7 @@ class Advisor:
             )
             return chat_completion.choices[0].message.content
         except Exception as e:
-            return "Based on your performance data, I recommend focusing on consistent practice and reviewing feedback from your assessments."
+            return f"Advice generation failed: {str(e)}"
 
 class StudentChatbot:
     def __init__(self):
