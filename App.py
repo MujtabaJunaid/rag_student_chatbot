@@ -10,7 +10,7 @@ from langchain.schema import Document
 from langchain.vectorstores import Chroma
 from langchain.embeddings import CohereEmbeddings
 from langchain.schema import BaseRetriever
-from langgraph import Graph
+from langgraph.graph import Graph
 
 app = FastAPI()
 
