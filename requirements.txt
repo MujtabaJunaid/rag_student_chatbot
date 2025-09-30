@@ -2,11 +2,11 @@ fastapi==0.95.2
 uvicorn==0.22.0
 gunicorn==20.1.0
 pydantic==1.10.2
-langchain==0.0.205
-langchain-community==0.0.3
+langchain>=0.0.205 
 chromadb==0.4.1
 cohere==4.0.0
 groq==0.32.0
 langgraph==0.4.0
+langgraph-checkpoint==2.1.1
 python-multipart==0.0.6
 python-dotenv==1.0.0
