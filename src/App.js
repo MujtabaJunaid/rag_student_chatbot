@@ -9,14 +9,14 @@ function App() {
   const [documentsUsed, setDocumentsUsed] = useState(0);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
+  const backendUrl = 'https://rag-student-chatbot-c64a020171ba.herokuapp.com';
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
     if (!studentId || !query) return;
-
     setLoading(true);
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch(`${backendUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -26,13 +26,11 @@ function App() {
           query: query
         })
       });
-
       const data = await response.json();
       setResponse(data.response);
       setAnalysis(data.analysis);
       setDocumentsUsed(data.documents_used);
     } catch (error) {
-      console.error('Error:', error);
       setResponse('Error connecting to server');
     }
     setLoading(false);
@@ -52,20 +50,17 @@ function App() {
       tags: formData.get('tags').split(',').map(tag => tag.trim()),
       date: formData.get('date')
     };
-
     try {
-      const response = await fetch('/api/add_question_data', {
+      const response = await fetch(`${backendUrl}/api/add_question_data`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(questionData)
       });
-
       const result = await response.json();
       alert(result.message);
     } catch (error) {
-      console.error('Error:', error);
       alert('Error adding question data');
     }
   };
@@ -75,7 +70,6 @@ function App() {
       <header className="app-header">
         <h1>Student Performance Chatbot</h1>
       </header>
-
       <div className="app-container">
         <div className="tabs">
           <button 
@@ -91,7 +85,6 @@ function App() {
             Add Question Data
           </button>
         </div>
-
         {activeTab === 'chat' && (
           <div className="chat-section">
             <form onSubmit={handleChatSubmit} className="chat-form">
@@ -119,7 +112,6 @@ function App() {
                 {loading ? 'Processing...' : 'Get Advice'}
               </button>
             </form>
-
             {response && (
               <div className="response-section">
                 <div className="response-card">
@@ -139,7 +131,6 @@ function App() {
             )}
           </div>
         )}
-
         {activeTab === 'addData' && (
           <div className="add-data-section">
             <form onSubmit={handleAddDataSubmit} className="data-form">
@@ -153,12 +144,10 @@ function App() {
                   <input type="text" name="assessment_id" required />
                 </div>
               </div>
-
               <div className="form-group">
                 <label>Question:</label>
                 <textarea name="question" rows="3" required />
               </div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>Question Type:</label>
@@ -174,7 +163,6 @@ function App() {
                   <input type="date" name="date" required />
                 </div>
               </div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>Total Marks:</label>
@@ -185,17 +173,14 @@ function App() {
                   <input type="number" name="obtained_marks" required />
                 </div>
               </div>
-
               <div className="form-group">
                 <label>Feedback:</label>
                 <textarea name="feedback" rows="2" required />
               </div>
-
               <div className="form-group">
                 <label>Tags (comma separated):</label>
                 <input type="text" name="tags" placeholder="biology, diagram, theory" required />
               </div>
-
               <button type="submit">Add Question Data</button>
             </form>
           </div>
