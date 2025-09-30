@@ -14,7 +14,7 @@ from chromadb.config import Settings as ChromaSettings
 
 app = FastAPI()
 
-client = Groq(api_key=os.environ.get("groq_api_key"))
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 class QuestionData(BaseModel):
     student_id: str
@@ -33,18 +33,49 @@ class ChatQuery(BaseModel):
 
 class VectorStoreManager:
     def __init__(self, persist_directory: str = "./chroma_db"):
-        self.embeddings = CohereEmbeddings(cohere_api_key=os.environ["default"])
-        self.vector_store = Chroma(
-            persist_directory=persist_directory,
-            embedding_function=self.embeddings,
-            client_settings=ChromaSettings(
+        self.persist_directory = persist_directory
+        cohere_key = os.environ.get("COHERE_API_KEY")
+        self.embeddings = None
+        if cohere_key:
+            try:
+                self.embeddings = CohereEmbeddings(cohere_api_key=cohere_key)
+            except Exception:
+                self.embeddings = None
+        self.vector_store = None
+        try:
+            settings = ChromaSettings(
                 persist_directory=persist_directory,
                 chroma_db_impl="duckdb+parquet",
                 anonymized_telemetry=False
             )
-        )
-    
+            self.vector_store = Chroma(
+                persist_directory=persist_directory,
+                embedding_function=self.embeddings,
+                client_settings=settings
+            )
+        except Exception:
+            try:
+                self.vector_store = Chroma(
+                    persist_directory=persist_directory,
+                    embedding_function=self.embeddings
+                )
+            except Exception:
+                self.vector_store = None
+
+    def _ensure_vector_store(self):
+        if self.vector_store is None:
+            if self.embeddings is None:
+                raise RuntimeError("Embeddings not configured; set COHERE_API_KEY environment variable.")
+            try:
+                self.vector_store = Chroma(
+                    persist_directory=self.persist_directory,
+                    embedding_function=self.embeddings
+                )
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize Chroma vector store: {e}")
+
     def add_question_data(self, question_data: QuestionData):
+        self._ensure_vector_store()
         doc_text = f"""
         Student: {question_data.student_id}
         Assessment: {question_data.assessment_id}
@@ -67,9 +98,13 @@ class VectorStoreManager:
         }
         doc = Document(page_content=doc_text, metadata=metadata)
         self.vector_store.add_documents([doc])
-        self.vector_store.persist()
-    
+        try:
+            self.vector_store.persist()
+        except Exception:
+            pass
+
     def get_retriever(self):
+        self._ensure_vector_store()
         return self.vector_store.as_retriever()
 
 vector_manager = VectorStoreManager()
@@ -77,21 +112,21 @@ vector_manager = VectorStoreManager()
 class IntentAnalyzer:
     def __init__(self):
         self.client = client
-    
+
     def analyze_intent(self, query: str) -> Dict[str, Any]:
-        chat_completion = self.client.chat.completions.create(
-            messages=[{"role": "user", "content": f"Analyze the student's query and determine the intent and relevant filters. Query: {query}"}],
-            model="llama3-70b-8192"
-        )
         try:
+            chat_completion = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": f"Analyze the student's query and determine the intent and relevant filters. Query: {query}"}],
+                model="llama3-70b-8192"
+            )
             return json.loads(chat_completion.choices[0].message.content)
-        except:
+        except Exception:
             return {"intent": "performance_review", "subject_filter": None, "topic_filter": None}
 
 class PerformanceAnalyzer:
     def __init__(self):
         self.client = client
-    
+
     def analyze_performance(self, documents: List[Document]) -> Dict[str, Any]:
         doc_texts = [doc.page_content for doc in documents]
         context = "\n\n".join(doc_texts)
@@ -104,7 +139,7 @@ class PerformanceAnalyzer:
 class Advisor:
     def __init__(self):
         self.client = client
-    
+
     def generate_advice(self, analysis: Dict[str, Any], intent: str) -> str:
         chat_completion = self.client.chat.completions.create(
             messages=[{
@@ -122,7 +157,7 @@ class StudentChatbot:
         self.advisor = Advisor()
         self.vector_manager = vector_manager
         self.graph = self._build_graph()
-    
+
     def _build_graph(self):
         workflow = Graph()
         workflow.add_node("intent_analyzer", self._intent_analyzer_node)
@@ -137,11 +172,11 @@ class StudentChatbot:
         workflow.add_edge("advisor", "response")
         workflow.add_edge("response", END)
         return workflow.compile()
-    
+
     def _intent_analyzer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         intent_data = self.intent_analyzer.analyze_intent(state["query"])
         return {"intent": intent_data}
-    
+
     def _retriever_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         retriever = self.vector_manager.get_retriever()
         filters = {"student_id": state["student_id"]}
@@ -152,25 +187,25 @@ class StudentChatbot:
             filter=filters
         )
         return {"documents": documents}
-    
+
     def _performance_analyzer_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         analysis = self.performance_analyzer.analyze_performance(state["documents"])
         return {"performance_analysis": analysis}
-    
+
     def _advisor_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         advice = self.advisor.generate_advice(
             state["performance_analysis"],
             state["intent"].get("intent", "performance_review")
         )
         return {"advice": advice}
-    
+
     def _response_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "response": state["advice"],
             "analysis": state["performance_analysis"]["analysis"],
             "documents_used": len(state["documents"])
         }
-    
+
     def query(self, student_id: str, query: str) -> Dict[str, Any]:
         initial_state = {
             "student_id": student_id,
